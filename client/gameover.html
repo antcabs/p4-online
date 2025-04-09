@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puissance 4 - Fin de partie</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="game-over-container">
+        <h2>Partie terminée</h2>
+        <p id="winner-message"></p>
+        <p id="rank-change"></p>
+        <button id="back-to-lobby-btn">Retour au lobby</button>
+    </div>
+
+    <script>
+        // Variables
+        let currentUser = null;
+
+        // Éléments DOM
+        const winnerMessageP = document.getElementById('winner-message');
+        const rankChangeP = document.getElementById('rank-change');
+        const backToLobbyBtn = document.getElementById('back-to-lobby-btn');
+
+        // Charger les données de fin de partie
+        function loadGameOverData() {
+            const gameOverDataString = localStorage.getItem('gameOverData');
+
+            if (!gameOverDataString) {
+                console.error("Pas de données de fin de partie trouvées, redirection vers le lobby");
+                window.location.href = '/lobby.html';
+                return false;
+            }
+
+            try {
+                const data = JSON.parse(gameOverDataString);
+                console.log("Données de fin de partie chargées:", data);
+
+                // Mettre à jour l'utilisateur actuel
+                currentUser = data.player;
+
+                // Afficher le résultat
+                if (data.winner) {
+                    if (data.winner === currentUser.id) {
+                        winnerMessageP.textContent = 'Vous avez gagné !';
+                        winnerMessageP.className = 'win';
+                    } else {
+                        winnerMessageP.textContent = 'Vous avez perdu !';
+                        winnerMessageP.className = 'loss';
+                    }
+                } else {
+                    winnerMessageP.textContent = 'Match nul !';
+                    winnerMessageP.className = 'draw';
+                }
+
+                // Afficher le changement d'ELO
+                if (data.eloChange > 0) {
+                    rankChangeP.textContent = `+${data.eloChange} points ELO`;
+                    rankChangeP.className = 'positive-change';
+                } else if (data.eloChange < 0) {
+                    rankChangeP.textContent = `${data.eloChange} points ELO`;
+                    rankChangeP.className = 'negative-change';
+                } else {
+                    rankChangeP.textContent = 'Aucun changement de points ELO';
+                    rankChangeP.className = '';
+                }
+
+                return true;
+            } catch (error) {
+                console.error("Erreur lors du chargement des données de fin de partie:", error);
+                window.location.href = '/lobby.html';
+                return false;
+            }
+        }
+
+        // Retour au lobby
+        backToLobbyBtn.addEventListener('click', () => {
+            console.log("Retour au lobby");
+            // Nettoyer les données de jeu
+            localStorage.removeItem('gameData');
+            localStorage.removeItem('gameOverData');
+            window.location.href = '/lobby.html';
+        });
+
+        // Vérifier la session et initialiser la page
+        window.addEventListener('DOMContentLoaded', async() => {
+            try {
+                console.log("Vérification de la session...");
+                const response = await fetch('/api/auth/session');
+
+                if (response.ok) {
+                    const data = await response.json();
+
+                    if (data.valid) {
+                        console.log("Session valide, utilisateur:", data.player);
+                        currentUser = data.player;
+                        loadGameOverData();
+                    } else {
+                        console.error("Session invalide, redirection vers la page de connexion");
+                        window.location.href = '/login.html';
+                    }
+                } else {
+                    console.error("Erreur de vérification de session, redirection vers la page de connexion");
+                    window.location.href = '/login.html';
+                }
+            } catch (error) {
+                console.error('Erreur de vérification de session:', error);
+                window.location.href = '/login.html';
+            }
+        });
+    </script>
+</body>
+
+</html>

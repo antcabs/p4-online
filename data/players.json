@@ -1,0 +1,28 @@
+{
+  "players": [
+    {
+      "id": "player_1744208080122_153",
+      "username": "aze",
+      "password": "azer",
+      "elo": 1000,
+      "rank": "Bronze",
+      "gamesPlayed": 0,
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "created": "2025-04-09T14:14:40.122Z"
+    },
+    {
+      "id": "player_1744208257990_385",
+      "username": "azer",
+      "password": "azer",
+      "elo": 1000,
+      "rank": "Bronze",
+      "gamesPlayed": 0,
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "created": "2025-04-09T14:17:37.990Z"
+    }
+  ]
+}

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puissance 4 - Connexion</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="login-container">
+        <h1>Puissance 4 Online</h1>
+        <div class="auth-tabs">
+            <button class="auth-tab active" data-tab="login">Connexion</button>
+            <button class="auth-tab" data-tab="register">Inscription</button>
+        </div>
+
+        <div id="login-form" class="auth-form">
+            <div class="form-group">
+                <input type="text" id="login-username" placeholder="Nom d'utilisateur">
+                <input type="password" id="login-password" placeholder="Mot de passe">
+                <button id="login-btn">Connexion</button>
+            </div>
+            <div id="login-error" class="error-message hidden"></div>
+        </div>
+
+        <div id="register-form" class="auth-form hidden">
+            <div class="form-group">
+                <input type="text" id="register-username" placeholder="Nom d'utilisateur">
+                <input type="password" id="register-password" placeholder="Mot de passe">
+                <input type="password" id="register-confirm-password" placeholder="Confirmer le mot de passe">
+                <button id="register-btn">S'inscrire</button>
+            </div>
+            <div id="register-error" class="error-message hidden"></div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Variables DOM
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const authTabs = document.querySelectorAll('.auth-tab');
+
+        const loginUsernameInput = document.getElementById('login-username');
+        const loginPasswordInput = document.getElementById('login-password');
+        const loginBtn = document.getElementById('login-btn');
+        const loginErrorDiv = document.getElementById('login-error');
+
+        const registerUsernameInput = document.getElementById('register-username');
+        const registerPasswordInput = document.getElementById('register-password');
+        const registerConfirmPasswordInput = document.getElementById('register-confirm-password');
+        const registerBtn = document.getElementById('register-btn');
+        const registerErrorDiv = document.getElementById('register-error');
+
+        // Changement d'onglet
+        authTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.tab;
+
+                // Mettre à jour les onglets
+                authTabs.forEach(t => {
+                    t.classList.toggle('active', t.dataset.tab === tabName);
+                });
+
+                // Afficher le formulaire correspondant
+                loginForm.classList.toggle('hidden', tabName !== 'login');
+                registerForm.classList.toggle('hidden', tabName !== 'register');
+
+                // Cacher les messages d'erreur
+                loginErrorDiv.classList.add('hidden');
+                registerErrorDiv.classList.add('hidden');
+            });
+        });
+
+        // Connexion
+        loginBtn.addEventListener('click', async() => {
+            const username = loginUsernameInput.value.trim();
+            const password = loginPasswordInput.value.trim();
+
+            if (!username || !password) {
+                loginErrorDiv.textContent = "Veuillez remplir tous les champs";
+                loginErrorDiv.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username,
+                        password
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    console.log("Connexion réussie, redirection vers le lobby...");
+                    // Stocker sessionId
+                    if (data.sessionId) {
+                        localStorage.setItem('sessionId', data.sessionId);
+                    }
+
+                    // Redirection directe
+                    window.location.href = "/lobby.html";
+                } else {
+                    loginErrorDiv.textContent = data.message || "Erreur de connexion";
+                    loginErrorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Erreur de connexion:', error);
+                loginErrorDiv.textContent = "Erreur de serveur";
+                loginErrorDiv.classList.remove('hidden');
+            }
+        });
+
+        // Inscription
+        registerBtn.addEventListener('click', async() => {
+            const username = registerUsernameInput.value.trim();
+            const password = registerPasswordInput.value.trim();
+            const confirmPassword = registerConfirmPasswordInput.value.trim();
+
+            if (!username || !password || !confirmPassword) {
+                registerErrorDiv.textContent = "Veuillez remplir tous les champs";
+                registerErrorDiv.classList.remove('hidden');
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                registerErrorDiv.textContent = "Les mots de passe ne correspondent pas";
+                registerErrorDiv.classList.remove('hidden');
+                return;
+            }
+
+            if (password.length < 4) {
+                registerErrorDiv.textContent = "Le mot de passe doit faire au moins 4 caractères";
+                registerErrorDiv.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                console.log("Tentative d'inscription...");
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username,
+                        password
+                    })
+                });
+
+                const data = await response.json();
+                console.log("Réponse d'inscription:", data);
+
+                if (data.success) {
+                    console.log("Inscription réussie, redirection vers le lobby...");
+                    // Stocker sessionId
+                    if (data.sessionId) {
+                        localStorage.setItem('sessionId', data.sessionId);
+                    }
+
+                    // Redirection directe
+                    window.location.href = "/lobby.html";
+                } else {
+                    registerErrorDiv.textContent = data.message || "Erreur d'inscription";
+                    registerErrorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Erreur d\'inscription:', error);
+                registerErrorDiv.textContent = "Erreur de serveur";
+                registerErrorDiv.classList.remove('hidden');
+            }
+        });
+
+        // Raccourcis clavier
+        loginUsernameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loginPasswordInput.focus();
+        });
+
+        loginPasswordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loginBtn.click();
+        });
+
+        registerUsernameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') registerPasswordInput.focus();
+        });
+
+        registerPasswordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') registerConfirmPasswordInput.focus();
+        });
+
+        registerConfirmPasswordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') registerBtn.click();
+        });
+
+        // Vérifier s'il y a une session active
+        window.addEventListener('DOMContentLoaded', async() => {
+            try {
+                console.log("Vérification de la session...");
+                const response = await fetch('/api/auth/session');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log("Réponse de session:", data);
+                    if (data.valid) {
+                        console.log("Session valide, redirection vers le lobby...");
+                        // Redirection directe
+                        window.location.href = "/lobby.html";
+                    }
+                }
+            } catch (error) {
+                console.error('Erreur de vérification de session:', error);
+            }
+        });
+    </script>
+</body>
+
+</html>

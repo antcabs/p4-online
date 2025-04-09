@@ -1,20 +1,12 @@
-const socket = io();
-let currentPlayer = null;
 let gameBoard = null;
 let currentTurn = null;
 let gameInProgress = false;
 
 // DOM Elements
-const loginContainer = document.getElementById('login-container');
 const lobbyContainer = document.getElementById('lobby-container');
 const gameContainer = document.getElementById('game-container');
 const gameOverContainer = document.getElementById('game-over-container');
 
-const usernameInput = document.getElementById('username');
-const loginBtn = document.getElementById('login-btn');
-const playerNameSpan = document.getElementById('player-name');
-const playerRankSpan = document.getElementById('player-rank');
-const playerEloSpan = document.getElementById('player-elo');
 const findMatchBtn = document.getElementById('find-match-btn');
 const matchStatusDiv = document.getElementById('match-status');
 
@@ -30,16 +22,11 @@ const winnerMessageP = document.getElementById('winner-message');
 const rankChangeP = document.getElementById('rank-change');
 const backToLobbyBtn = document.getElementById('back-to-lobby-btn');
 
-// Login
-loginBtn.addEventListener('click', () => {
-    const username = usernameInput.value.trim();
-    if (username) {
-        socket.emit('login', { username });
-    }
-});
-
 // Matchmaking
 findMatchBtn.addEventListener('click', () => {
+    const socket = window.auth.getSocket();
+    if (!socket) return;
+
     socket.emit('find-match');
     findMatchBtn.disabled = true;
     matchStatusDiv.textContent = 'Recherche d\'un adversaire...';
@@ -48,7 +35,10 @@ findMatchBtn.addEventListener('click', () => {
 // Game
 document.querySelectorAll('.column-selector').forEach(column => {
     column.addEventListener('click', (e) => {
-        if (gameInProgress && currentTurn === currentPlayer.id) {
+        const socket = window.auth.getSocket();
+        if (!socket) return;
+
+        if (gameInProgress && currentTurn === window.auth.getCurrentUser().id) {
             const columnIndex = parseInt(e.target.dataset.column);
             socket.emit('make-move', { column: columnIndex });
         }
@@ -56,6 +46,9 @@ document.querySelectorAll('.column-selector').forEach(column => {
 });
 
 forfeitBtn.addEventListener('click', () => {
+    const socket = window.auth.getSocket();
+    if (!socket) return;
+
     if (gameInProgress) {
         socket.emit('forfeit');
     }
@@ -66,24 +59,30 @@ backToLobbyBtn.addEventListener('click', () => {
     lobbyContainer.classList.remove('hidden');
     findMatchBtn.disabled = false;
     matchStatusDiv.textContent = '';
+
+    // Mettre à jour les infos joueur avec les nouvelles données
+    window.auth.updatePlayerInfo();
+
+    // Recharger le classement
+    window.leaderboard.load();
 });
 
 // Render board
 function renderBoard() {
     boardDiv.innerHTML = '';
-    
+
     for (let row = 0; row < 6; row++) {
         for (let col = 0; col < 7; col++) {
             const cell = document.createElement('div');
             cell.className = 'cell';
-            
+
             const value = gameBoard[row][col];
             if (value === 1) {
                 cell.classList.add('player1');
             } else if (value === 2) {
                 cell.classList.add('player2');
             }
-            
+
             boardDiv.appendChild(cell);
         }
     }
@@ -91,87 +90,124 @@ function renderBoard() {
 
 // Update turn indicator
 function updateTurnIndicator() {
-    if (currentTurn === currentPlayer.id) {
+    const currentUser = window.auth.getCurrentUser();
+    if (!currentUser) return;
+
+    if (currentTurn === currentUser.id) {
         turnIndicatorDiv.textContent = 'Votre tour';
+        turnIndicatorDiv.classList.add('your-turn');
+        turnIndicatorDiv.classList.remove('opponent-turn');
     } else {
         turnIndicatorDiv.textContent = 'Tour de l\'adversaire';
+        turnIndicatorDiv.classList.add('opponent-turn');
+        turnIndicatorDiv.classList.remove('your-turn');
     }
 }
 
-// Socket event handlers
-socket.on('login-success', (data) => {
-    currentPlayer = data.player;
-    loginContainer.classList.add('hidden');
-    lobbyContainer.classList.remove('hidden');
-    
-    playerNameSpan.textContent = currentPlayer.username;
-    playerRankSpan.textContent = currentPlayer.rank;
-    playerEloSpan.textContent = currentPlayer.elo;
-});
+// Setup socket event listeners
+function setupSocketListeners() {
+    const socket = window.auth.getSocket();
+    if (!socket) return;
 
-socket.on('match-found', (data) => {
-    lobbyContainer.classList.add('hidden');
-    gameContainer.classList.remove('hidden');
-    
-    gameInProgress = true;
-    gameBoard = data.board;
-    currentTurn = data.currentTurn;
-    
-    // Set player info
-    const players = data.players;
-    const opponent = players.find(p => p.id !== currentPlayer.id);
-    
-    if (players[0].id === currentPlayer.id) {
-        player1NameSpan.textContent = currentPlayer.username;
-        player1RankSpan.textContent = currentPlayer.rank;
-        player2NameSpan.textContent = opponent.username;
-        player2RankSpan.textContent = opponent.rank;
-    } else {
-        player1NameSpan.textContent = opponent.username;
-        player1RankSpan.textContent = opponent.rank;
-        player2NameSpan.textContent = currentPlayer.username;
-        player2RankSpan.textContent = currentPlayer.rank;
-    }
-    
-    renderBoard();
-    updateTurnIndicator();
-});
+    // Match found
+    socket.on('match-found', (data) => {
+        lobbyContainer.classList.add('hidden');
+        gameContainer.classList.remove('hidden');
 
-socket.on('game-update', (data) => {
-    gameBoard = data.board;
-    currentTurn = data.currentTurn;
-    
-    renderBoard();
-    updateTurnIndicator();
-});
+        gameInProgress = true;
+        gameBoard = data.board;
+        currentTurn = data.currentTurn;
 
-socket.on('game-over', (data) => {
-    gameInProgress = false;
-    gameContainer.classList.add('hidden');
-    gameOverContainer.classList.remove('hidden');
-    
-    // Update player info with new rank/elo
-    currentPlayer = data.player;
-    playerRankSpan.textContent = currentPlayer.rank;
-    playerEloSpan.textContent = currentPlayer.elo;
-    
-    // Display game result
-    if (data.winner) {
-        if (data.winner === currentPlayer.id) {
-            winnerMessageP.textContent = 'Vous avez gagné !';
+        // Set player info
+        const currentUser = window.auth.getCurrentUser();
+        const players = data.players;
+        const opponent = players.find(p => p.id !== currentUser.id);
+
+        if (players[0].id === currentUser.id) {
+            player1NameSpan.textContent = currentUser.username;
+            player1RankSpan.textContent = currentUser.rank;
+            player2NameSpan.textContent = opponent.username;
+            player2RankSpan.textContent = opponent.rank;
         } else {
-            winnerMessageP.textContent = 'Vous avez perdu !';
+            player1NameSpan.textContent = opponent.username;
+            player1RankSpan.textContent = opponent.rank;
+            player2NameSpan.textContent = currentUser.username;
+            player2RankSpan.textContent = currentUser.rank;
         }
-    } else {
-        winnerMessageP.textContent = 'Match nul !';
-    }
-    
-    // Display rank change
-    if (data.eloChange > 0) {
-        rankChangeP.textContent = `+${data.eloChange} points ELO`;
-    } else if (data.eloChange < 0) {
-        rankChangeP.textContent = `${data.eloChange} points ELO`;
-    } else {
-        rankChangeP.textContent = 'Aucun changement de points ELO';
-    }
+
+        renderBoard();
+        updateTurnIndicator();
+    });
+
+    // Game update
+    socket.on('game-update', (data) => {
+        gameBoard = data.board;
+        currentTurn = data.currentTurn;
+
+        renderBoard();
+        updateTurnIndicator();
+    });
+
+    // Game over
+    socket.on('game-over', (data) => {
+        gameInProgress = false;
+        gameContainer.classList.add('hidden');
+        gameOverContainer.classList.remove('hidden');
+
+        // Update currentUser with new data
+        const currentUser = window.auth.getCurrentUser();
+        Object.assign(currentUser, data.player);
+
+        // Update winner message
+        if (data.winner) {
+            if (data.winner === currentUser.id) {
+                winnerMessageP.textContent = 'Vous avez gagné !';
+                winnerMessageP.className = 'win';
+            } else {
+                winnerMessageP.textContent = 'Vous avez perdu !';
+                winnerMessageP.className = 'loss';
+            }
+        } else {
+            winnerMessageP.textContent = 'Match nul !';
+            winnerMessageP.className = 'draw';
+        }
+
+        // Display rank change
+        if (data.eloChange > 0) {
+            rankChangeP.textContent = `+${data.eloChange} points ELO`;
+            rankChangeP.classList.add('positive-change');
+            rankChangeP.classList.remove('negative-change');
+        } else if (data.eloChange < 0) {
+            rankChangeP.textContent = `${data.eloChange} points ELO`;
+            rankChangeP.classList.add('negative-change');
+            rankChangeP.classList.remove('positive-change');
+        } else {
+            rankChangeP.textContent = 'Aucun changement de points ELO';
+            rankChangeP.classList.remove('positive-change', 'negative-change');
+        }
+    });
+
+    // Error handling
+    socket.on('matchmaking-error', (data) => {
+        findMatchBtn.disabled = false;
+        matchStatusDiv.textContent = data.message || 'Erreur de matchmaking';
+        matchStatusDiv.classList.add('error');
+
+        setTimeout(() => {
+            matchStatusDiv.classList.remove('error');
+            matchStatusDiv.textContent = '';
+        }, 3000);
+    });
+
+    socket.on('move-error', (data) => {
+        console.error('Erreur de coup:', data.message);
+    });
+}
+
+// Initialize game module
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup socket listeners after authentication is completed
+    setTimeout(() => {
+        setupSocketListeners();
+    }, 500);
 });

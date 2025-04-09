@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puissance 4 - Lobby</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="lobby-container">
+        <h2>Lobby</h2>
+        <div class="player-info">
+            <p>Joueur: <span id="player-name"></span></p>
+            <p>Rang: <span id="player-rank"></span></p>
+            <p>Score ELO: <span id="player-elo"></span></p>
+            <p>Parties: <span id="player-games"></span></p>
+            <p>V/D/N: <span id="player-record"></span></p>
+        </div>
+        <button id="find-match-btn">Rechercher un match</button>
+        <div id="match-status"></div>
+        <div class="leaderboard-container">
+            <h3>Classement</h3>
+            <div id="leaderboard"></div>
+        </div>
+        <div class="logout-container">
+            <button id="logout-btn">Déconnexion</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Variables
+        let currentUser = null;
+        let socket = null;
+
+        // Éléments DOM
+        const playerNameSpan = document.getElementById('player-name');
+        const playerRankSpan = document.getElementById('player-rank');
+        const playerEloSpan = document.getElementById('player-elo');
+        const playerGamesSpan = document.getElementById('player-games');
+        const playerRecordSpan = document.getElementById('player-record');
+        const findMatchBtn = document.getElementById('find-match-btn');
+        const matchStatusDiv = document.getElementById('match-status');
+        const leaderboardDiv = document.getElementById('leaderboard');
+        const logoutBtn = document.getElementById('logout-btn');
+
+        // Charger le classement
+        async function loadLeaderboard() {
+            try {
+                console.log("Chargement du classement...");
+                const response = await fetch('/api/leaderboard?limit=10');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log("Données du classement reçues:", data);
+                    renderLeaderboard(data.leaderboard);
+                } else {
+                    console.error('Erreur lors du chargement du classement');
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement du classement:', error);
+            }
+        }
+
+        // Afficher le classement
+        function renderLeaderboard(players) {
+            leaderboardDiv.innerHTML = '';
+
+            const table = document.createElement('table');
+            table.className = 'leaderboard-table';
+
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+
+            ['Pos.', 'Joueur', 'ELO', 'Rang', 'V/D/N'].forEach(text => {
+                const th = document.createElement('th');
+                th.textContent = text;
+                headerRow.appendChild(th);
+            });
+
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+
+            if (players && players.length > 0) {
+                players.forEach((player, index) => {
+                    const row = document.createElement('tr');
+
+                    if (currentUser && player.id === currentUser.id) {
+                        row.classList.add('current-user');
+                    }
+
+                    // Position
+                    const posCell = document.createElement('td');
+                    posCell.textContent = index + 1;
+                    row.appendChild(posCell);
+
+                    // Nom
+                    const nameCell = document.createElement('td');
+                    nameCell.textContent = player.username;
+                    row.appendChild(nameCell);
+
+                    // ELO
+                    const eloCell = document.createElement('td');
+                    eloCell.textContent = player.elo;
+                    row.appendChild(eloCell);
+
+                    // Rang
+                    const rankCell = document.createElement('td');
+                    rankCell.textContent = player.rank;
+                    row.appendChild(rankCell);
+
+                    // Stats
+                    const statsCell = document.createElement('td');
+                    statsCell.textContent = `${player.wins || 0}/${player.losses || 0}/${player.draws || 0}`;
+                    row.appendChild(statsCell);
+
+                    tbody.appendChild(row);
+                });
+            } else {
+                const emptyRow = document.createElement('tr');
+                const emptyCell = document.createElement('td');
+                emptyCell.colSpan = 5;
+                emptyCell.textContent = 'Aucun joueur dans le classement';
+                emptyCell.className = 'empty-leaderboard';
+                emptyRow.appendChild(emptyCell);
+                tbody.appendChild(emptyRow);
+            }
+
+            table.appendChild(tbody);
+            leaderboardDiv.appendChild(table);
+            console.log("Classement affiché");
+        }
+
+        // Mettre à jour les informations du joueur
+        function updatePlayerInfo() {
+            if (!currentUser) return;
+
+            console.log("Mise à jour des informations joueur:", currentUser);
+            playerNameSpan.textContent = currentUser.username || 'Inconnu';
+            playerRankSpan.textContent = currentUser.rank || 'Inconnu';
+            playerEloSpan.textContent = currentUser.elo || '0';
+            playerGamesSpan.textContent = currentUser.gamesPlayed || '0';
+            playerRecordSpan.textContent = `${currentUser.wins || '0'}/${currentUser.losses || '0'}/${currentUser.draws || '0'}`;
+        }
+
+        // Initialiser le socket
+        function initSocket() {
+            const sessionId = localStorage.getItem('sessionId');
+
+            if (!sessionId) {
+                console.error("Pas de sessionId trouvé, redirection vers la page de connexion");
+                window.location.href = '/login.html';
+                return null;
+            }
+
+            console.log("Initialisation du socket avec sessionId:", sessionId);
+            const socket = io({
+                auth: {
+                    sessionId
+                }
+            });
+
+            socket.on('connect', () => {
+                console.log("Socket connecté:", socket.id);
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('Erreur de connexion au socket:', error.message);
+
+                if (error.message.includes('Authentification') || error.message.includes('Session')) {
+                    localStorage.removeItem('sessionId');
+                    window.location.href = '/login.html';
+                }
+            });
+
+            socket.on('match-found', (data) => {
+                console.log("Match trouvé:", data);
+                // Sauvegarder les données de jeu pour la page suivante
+                localStorage.setItem('gameData', JSON.stringify(data));
+                window.location.href = '/game.html';
+            });
+
+            socket.on('matchmaking-error', (data) => {
+                console.error("Erreur de matchmaking:", data);
+                findMatchBtn.disabled = false;
+                matchStatusDiv.textContent = data.message || 'Erreur de matchmaking';
+                matchStatusDiv.classList.add('error');
+
+                setTimeout(() => {
+                    matchStatusDiv.classList.remove('error');
+                    matchStatusDiv.textContent = '';
+                }, 3000);
+            });
+
+            return socket;
+        }
+
+        // Gérer la recherche de match
+        findMatchBtn.addEventListener('click', () => {
+            if (!socket) {
+                console.error("Socket non initialisé");
+                return;
+            }
+
+            console.log("Recherche d'un match...");
+            socket.emit('find-match');
+            findMatchBtn.disabled = true;
+            matchStatusDiv.textContent = 'Recherche d\'un adversaire...';
+        });
+
+        // Gérer la déconnexion
+        logoutBtn.addEventListener('click', async() => {
+            try {
+                console.log("Déconnexion...");
+                await fetch('/api/auth/logout', {
+                    method: 'POST'
+                });
+
+                localStorage.removeItem('sessionId');
+                localStorage.removeItem('gameData');
+
+                if (socket) {
+                    socket.disconnect();
+                }
+
+                window.location.href = '/login.html';
+            } catch (error) {
+                console.error('Erreur lors de la déconnexion:', error);
+            }
+        });
+
+        // Vérifier la session et initialiser la page
+        window.addEventListener('DOMContentLoaded', async() => {
+            try {
+                console.log("Vérification de la session...");
+                const response = await fetch('/api/auth/session');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log("Réponse de session:", data);
+
+                    if (data.valid) {
+                        console.log("Session valide, utilisateur:", data.player);
+                        currentUser = data.player;
+                        updatePlayerInfo();
+                        socket = initSocket();
+                        loadLeaderboard();
+                    } else {
+                        console.error("Session invalide, redirection vers la page de connexion");
+                        window.location.href = '/login.html';
+                    }
+                } else {
+                    console.error("Erreur de vérification de session, redirection vers la page de connexion");
+                    window.location.href = '/login.html';
+                }
+            } catch (error) {
+                console.error('Erreur de vérification de session:', error);
+                window.location.href = '/login.html';
+            }
+        });
+    </script>
+</body>
+
+</html>

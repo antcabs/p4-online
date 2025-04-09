@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puissance 4 - Partie</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="game-container">
+        <div class="game-info">
+            <div class="player player1">
+                <span id="player1-name"></span>
+                <span id="player1-rank"></span>
+            </div>
+            <div class="vs">VS</div>
+            <div class="player player2">
+                <span id="player2-name"></span>
+                <span id="player2-rank"></span>
+            </div>
+        </div>
+
+        <div id="board-container">
+            <div id="column-selectors">
+                <div class="column-selector" data-column="0"></div>
+                <div class="column-selector" data-column="1"></div>
+                <div class="column-selector" data-column="2"></div>
+                <div class="column-selector" data-column="3"></div>
+                <div class="column-selector" data-column="4"></div>
+                <div class="column-selector" data-column="5"></div>
+                <div class="column-selector" data-column="6"></div>
+            </div>
+            <div id="board"></div>
+        </div>
+
+        <div class="game-controls">
+            <div id="turn-indicator"></div>
+            <button id="forfeit-btn">Abandonner</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Variables
+        let currentUser = null;
+        let socket = null;
+        let gameBoard = null;
+        let currentTurn = null;
+        let gameInProgress = false;
+
+        // Éléments DOM
+        const player1NameSpan = document.getElementById('player1-name');
+        const player1RankSpan = document.getElementById('player1-rank');
+        const player2NameSpan = document.getElementById('player2-name');
+        const player2RankSpan = document.getElementById('player2-rank');
+        const boardDiv = document.getElementById('board');
+        const turnIndicatorDiv = document.getElementById('turn-indicator');
+        const forfeitBtn = document.getElementById('forfeit-btn');
+        const columnSelectors = document.querySelectorAll('.column-selector');
+
+        // Initialiser le socket
+        function initSocket() {
+            const sessionId = localStorage.getItem('sessionId');
+
+            if (!sessionId) {
+                console.error("Pas de sessionId trouvé, redirection vers la page de connexion");
+                window.location.href = '/login.html';
+                return null;
+            }
+
+            console.log("Initialisation du socket avec sessionId:", sessionId);
+            const socket = io({
+                auth: {
+                    sessionId
+                }
+            });
+
+            socket.on('connect', () => {
+                console.log("Socket connecté:", socket.id);
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('Erreur de connexion au socket:', error.message);
+
+                if (error.message.includes('Authentification') || error.message.includes('Session')) {
+                    localStorage.removeItem('sessionId');
+                    window.location.href = '/login.html';
+                }
+            });
+
+            // Événements du jeu
+            socket.on('game-update', (data) => {
+                console.log("Mise à jour du jeu:", data);
+                gameBoard = data.board;
+                currentTurn = data.currentTurn;
+                renderBoard();
+                updateTurnIndicator();
+            });
+
+            socket.on('game-over', (data) => {
+                console.log("Fin de partie:", data);
+                // Sauvegarder les données de fin de partie
+                localStorage.setItem('gameOverData', JSON.stringify(data));
+                window.location.href = '/gameover.html';
+            });
+
+            socket.on('move-error', (data) => {
+                console.error("Erreur de mouvement:", data.message);
+            });
+
+            return socket;
+        }
+
+        // Charger les données de jeu du localStorage
+        function loadGameData() {
+            const gameDataString = localStorage.getItem('gameData');
+
+            if (!gameDataString) {
+                console.error("Pas de données de jeu trouvées, redirection vers le lobby");
+                window.location.href = '/lobby.html';
+                return false;
+            }
+
+            try {
+                const gameData = JSON.parse(gameDataString);
+                console.log("Données de jeu chargées:", gameData);
+
+                gameBoard = gameData.board;
+                currentTurn = gameData.currentTurn;
+                gameInProgress = true;
+
+                // Configurer les informations des joueurs
+                const players = gameData.players;
+                const opponent = players.find(p => p.id !== currentUser.id);
+
+                if (players[0].id === currentUser.id) {
+                    player1NameSpan.textContent = currentUser.username;
+                    player1RankSpan.textContent = currentUser.rank;
+                    player2NameSpan.textContent = opponent.username;
+                    player2RankSpan.textContent = opponent.rank;
+                } else {
+                    player1NameSpan.textContent = opponent.username;
+                    player1RankSpan.textContent = opponent.rank;
+                    player2NameSpan.textContent = currentUser.username;
+                    player2RankSpan.textContent = currentUser.rank;
+                }
+
+                return true;
+            } catch (error) {
+                console.error("Erreur lors du chargement des données de jeu:", error);
+                window.location.href = '/lobby.html';
+                return false;
+            }
+        }
+
+        // Afficher le plateau de jeu
+        function renderBoard() {
+            if (!gameBoard) return;
+
+            boardDiv.innerHTML = '';
+
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 7; col++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+
+                    const value = gameBoard[row][col];
+                    if (value === 1) {
+                        cell.classList.add('player1');
+                    } else if (value === 2) {
+                        cell.classList.add('player2');
+                    }
+
+                    boardDiv.appendChild(cell);
+                }
+            }
+        }
+
+        // Mettre à jour l'indicateur de tour
+        function updateTurnIndicator() {
+            if (!currentUser) return;
+
+            if (currentTurn === currentUser.id) {
+                turnIndicatorDiv.textContent = 'Votre tour';
+                turnIndicatorDiv.className = 'your-turn';
+            } else {
+                turnIndicatorDiv.textContent = 'Tour de l\'adversaire';
+                turnIndicatorDiv.className = 'opponent-turn';
+            }
+        }
+
+        // Gérer un clic sur une colonne
+        function handleColumnClick(e) {
+            if (!socket || !gameInProgress || currentTurn !== currentUser.id) return;
+
+            const columnIndex = parseInt(e.target.dataset.column);
+            console.log('Tentative de jouer dans la colonne:', columnIndex);
+
+            socket.emit('make-move', {
+                column: columnIndex
+            });
+        }
+
+        // Gérer l'abandon
+        function handleForfeit() {
+            if (!socket || !gameInProgress) return;
+
+            if (confirm('Êtes-vous sûr de vouloir abandonner cette partie?')) {
+                console.log('Abandon de la partie');
+                socket.emit('forfeit');
+            }
+        }
+
+        // Attacher les événements
+        function setupEventListeners() {
+            // Clic sur les colonnes
+            columnSelectors.forEach(column => {
+                column.addEventListener('click', handleColumnClick);
+            });
+
+            // Bouton d'abandon
+            forfeitBtn.addEventListener('click', handleForfeit);
+        }
+
+        // Initialiser la page
+        window.addEventListener('DOMContentLoaded', async() => {
+            try {
+                console.log("Vérification de la session...");
+                const response = await fetch('/api/auth/session');
+
+                if (response.ok) {
+                    const data = await response.json();
+
+                    if (data.valid) {
+                        console.log("Session valide, utilisateur:", data.player);
+                        currentUser = data.player;
+
+                        // Initialiser le socket avant de charger les données du jeu
+                        socket = initSocket();
+
+                        // Charger les données du jeu
+                        if (loadGameData()) {
+                            renderBoard();
+                            updateTurnIndicator();
+                            setupEventListeners();
+                        }
+                    } else {
+                        console.error("Session invalide, redirection vers la page de connexion");
+                        window.location.href = '/login.html';
+                    }
+                } else {
+                    console.error("Erreur de vérification de session, redirection vers la page de connexion");
+                    window.location.href = '/login.html';
+                }
+            } catch (error) {
+                console.error('Erreur de vérification de session:', error);
+                window.location.href = '/login.html';
+            }
+        });
+    </script>
+</body>
+
+</html>
